@@ -19,6 +19,8 @@ resource "helm_release" "argocd" {
   name             = "argocd"
   namespace        = var.argocd_namespace
   create_namespace = true
+  timeout          = 900
+  cleanup_on_fail  = true
 
   repository = "https://argoproj.github.io/argo-helm"
   chart      = "argo-cd"
@@ -35,10 +37,12 @@ resource "helm_release" "argocd" {
         ingress = {
           enabled = false # We'll use port-forward for access
         }
-        # Enable insecure mode for easier local access
-        extraArgs = [
-          "--insecure"
-        ]
+      }
+
+      configs = {
+        params = {
+          "server.insecure" = "true"
+        }
       }
 
       # Controller configuration
