@@ -21,9 +21,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aws-containers/retail-store-sample-app/catalog/api"
-	"github.com/aws-containers/retail-store-sample-app/catalog/httputil"
-	"github.com/aws-containers/retail-store-sample-app/catalog/model"
+	"github.com/Amarjeetkumart/retail-app/catalog/api"
+	"github.com/Amarjeetkumart/retail-app/catalog/httputil"
+	"github.com/Amarjeetkumart/retail-app/catalog/model"
 	"github.com/gin-gonic/gin"
 )
 

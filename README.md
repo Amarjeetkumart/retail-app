@@ -1,19 +1,19 @@
-# Retail Store Sample App - GitOps with Amazon EKS Auto Mode
+# Retail App - GitOps with Amazon EKS Auto Mode
  
 ![Banner](./docs/images/banner.png)
  
 <div align="center">
   <div align="center">
 
-[![Stars](https://img.shields.io/github/stars/LondheShubham153/retail-store-sample-app)](Stars)
-![GitHub License](https://img.shields.io/github/license/LondheShubham153/retail-store-sample-app?color=green)
-![Dynamic JSON Badge](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%LondheShubham153%2Fretail-store-sample-app%2Frefs%2Fheads%2Fmain%2F.release-please-manifest.json&query=%24%5B%22.%22%5D&label=release)
+[![Stars](https://img.shields.io/github/stars/Amarjeetkumart/retail-app)](Stars)
+![GitHub License](https://img.shields.io/github/license/Amarjeetkumart/retail-app?color=green)
+![Dynamic JSON Badge](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FAmarjeetkumart%2Fretail-app%2Frefs%2Fheads%2Fmain%2F.release-please-manifest.json&query=%24%5B%22.%22%5D&label=release)
 
 
   </div>
 
   <strong>
-  <h2>AWS Containers Retail Sample</h2>
+  <h2>Amarjeet's Retail App</h2>
   </strong>
 </div>
 
@@ -32,7 +32,7 @@ This is a sample application designed to illustrate various concepts related to 
 - [Infrastructure Components](#infrastructure-components)
 - [CI/CD Pipeline](#cicd-pipeline)
 - [Monitoring and Observability](#monitoring-and-observability)
-- [Cleanup](https://github.com/LondheShubham153/retail-store-sample-app/blob/main/README.md#step-12-cleanup)
+- [Cleanup](https://github.com/Amarjeetkumart/retail-app/blob/main/README.md#step-12-cleanup)
 - [Troubleshooting](#troubleshooting)
 
 ## Overview
@@ -51,7 +51,7 @@ The Retail Store Sample App demonstrates a modern microservices architecture dep
 
 The application has been deliberately over-engineered to generate multiple de-coupled components. These components generally have different infrastructure dependencies, and may support multiple "backends" (example: Carts service supports MongoDB or DynamoDB).
 
-![Architecture](https://github.com/aws-containers/retail-store-sample-app/raw/main/docs/images/architecture.png)
+![Architecture](./docs/images/architecture.png)
 
 | Component                  | Language | Container Image                                                             | Helm Chart                                                                        | Description                             |
 | -------------------------- | -------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | --------------------------------------- |
@@ -82,7 +82,7 @@ The Infrastructure Architecture follows cloud-native best practices:
 
 1. **Install Prerequisites**: AWS CLI, Terraform, kubectl, Docker, Helm
 2. **Configure AWS**: `aws configure` with appropriate credentials
-3. **Clone Repository**: `git clone https://github.com/LondheShubham153/retail-store-sample-app.git`
+3. **Clone Repository**: `git clone https://github.com/Amarjeetkumart/retail-app.git`
 4. **Deploy Infrastructure**: Run Terraform in two phases (see [Getting Started](#getting-started))
 5. **Access Application**: Get load balancer URL and browse the retail store
 
@@ -114,7 +114,7 @@ This repository uses a **dual-branch approach** for different deployment scenari
 
 1. **Install Prerequisites**: AWS CLI, Terraform, kubectl, Docker, Helm
 2. **Configure AWS**: `aws configure` with appropriate credentials
-3. **Clone Repository**: `git clone https://github.com/LondheShubham153/retail-store-sample-app.git`
+3. **Clone Repository**: `git clone https://github.com/Amarjeetkumart/retail-app.git`
 4. **Deploy Infrastructure**: Run Terraform in two phases (see [Getting Started](#getting-started))
 5. **Access Application**: Get load balancer URL and browse the retail store
 
@@ -187,7 +187,7 @@ aws configure
 ### Step 2. Clone the Repository:
 
 ```sh
-git clone https://github.com/LondheShubham153/retail-store-sample-app.git
+git clone https://github.com/Amarjeetkumart/retail-app.git
 ```
 
 > [!IMPORTANT]
@@ -208,7 +208,7 @@ git clone https://github.com/LondheShubham153/retail-store-sample-app.git
 ### Step 4. Deploy Infrastructure with Terraform:
 
 ```sh
-cd retail-store-sample-app/terraform/
+cd retail-app/terraform/
 terraform init
 terraform apply --auto-approve
 ```
@@ -385,7 +385,7 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](./LICE
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/LondheShubham153/retail-store-sample-app/issues)
+- **Issues**: [GitHub Issues](https://github.com/Amarjeetkumart/retail-app/issues)
 - **Discord**: [TrainWithShubhamCommunity](https://discord.gg/kGEr9mR5gT)
 
 ---
