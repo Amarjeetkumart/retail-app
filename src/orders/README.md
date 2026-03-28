@@ -2,7 +2,6 @@
 
 <!-- GitOps Test: Multi-service deploy test - Orders -->
 
-
 | Language | Persistence |
 | -------- | ----------- |
 | Java     | MySQL       |
