@@ -1,0 +1,308 @@
+name: CI - Build and Push to ECR
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ap-south-1
+  REGISTRY_ALIAS: retail-store
+
+jobs:
+  detect-changes:
+    name: Detect Service Changes
+    runs-on: ubuntu-latest
+    outputs:
+      cart: ${{ steps.detect.outputs.cart }}
+      catalog: ${{ steps.detect.outputs.catalog }}
+      checkout: ${{ steps.detect.outputs.checkout }}
+      orders: ${{ steps.detect.outputs.orders }}
+      ui: ${{ steps.detect.outputs.ui }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes
+        id: detect
+        run: |
+          if git diff --name-only origin/main...HEAD | grep -q "^src/cart/"; then
+            echo "cart=true" >> $GITHUB_OUTPUT
+          else
+            echo "cart=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if git diff --name-only origin/main...HEAD | grep -q "^src/catalog/"; then
+            echo "catalog=true" >> $GITHUB_OUTPUT
+          else
+            echo "catalog=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if git diff --name-only origin/main...HEAD | grep -q "^src/checkout/"; then
+            echo "checkout=true" >> $GITHUB_OUTPUT
+          else
+            echo "checkout=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if git diff --name-only origin/main...HEAD | grep -q "^src/orders/"; then
+            echo "orders=true" >> $GITHUB_OUTPUT
+          else
+            echo "orders=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if git diff --name-only origin/main...HEAD | grep -q "^src/ui/"; then
+            echo "ui=true" >> $GITHUB_OUTPUT
+          else
+            echo "ui=false" >> $GITHUB_OUTPUT
+          fi
+
+  build-and-push-cart:
+    name: Build & Push Cart Service
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.cart == 'true' && github.event_name != 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
+      - name: Build and push Docker image
+        id: docker-build
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REPOSITORY: retail-store-sample-cart
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd src/cart
+          docker build -t $REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG
+          echo "image_uri=$REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update Helm values
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/cart/chart/values.yaml
+
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "github-actions@github.com"
+          git config --local user.name "GitHub Actions"
+          git add src/cart/chart/values.yaml
+          git commit -m "ci: update cart service image tag to ${{ github.sha }}" || true
+          git push
+
+  build-and-push-catalog:
+    name: Build & Push Catalog Service
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.catalog == 'true' && github.event_name != 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
+      - name: Build and push Docker image
+        id: docker-build
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REPOSITORY: retail-store-sample-catalog
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd src/catalog
+          docker build -t $REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG
+          echo "image_uri=$REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update Helm values
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/catalog/chart/values.yaml
+
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "github-actions@github.com"
+          git config --local user.name "GitHub Actions"
+          git add src/catalog/chart/values.yaml
+          git commit -m "ci: update catalog service image tag to ${{ github.sha }}" || true
+          git push
+
+  build-and-push-checkout:
+    name: Build & Push Checkout Service
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.checkout == 'true' && github.event_name != 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
+      - name: Build and push Docker image
+        id: docker-build
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REPOSITORY: retail-store-sample-checkout
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd src/checkout
+          docker build -t $REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG
+          echo "image_uri=$REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update Helm values
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/checkout/chart/values.yaml
+
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "github-actions@github.com"
+          git config --local user.name "GitHub Actions"
+          git add src/checkout/chart/values.yaml
+          git commit -m "ci: update checkout service image tag to ${{ github.sha }}" || true
+          git push
+
+  build-and-push-orders:
+    name: Build & Push Orders Service
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.orders == 'true' && github.event_name != 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
+      - name: Build and push Docker image
+        id: docker-build
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REPOSITORY: retail-store-sample-orders
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd src/orders
+          docker build -t $REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG
+          echo "image_uri=$REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update Helm values
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/orders/chart/values.yaml
+
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "github-actions@github.com"
+          git config --local user.name "GitHub Actions"
+          git add src/orders/chart/values.yaml
+          git commit -m "ci: update orders service image tag to ${{ github.sha }}" || true
+          git push
+
+  build-and-push-ui:
+    name: Build & Push UI Service
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.ui == 'true' && github.event_name != 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
+      - name: Build and push Docker image
+        id: docker-build
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REPOSITORY: retail-store-sample-ui
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd src/ui
+          docker build -t $REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG
+          echo "image_uri=$REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update Helm values
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/ui/chart/values.yaml
+
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "github-actions@github.com"
+          git config --local user.name "GitHub Actions"
+          git add src/ui/chart/values.yaml
+          git commit -m "ci: update ui service image tag to ${{ github.sha }}" || true
+          git push
