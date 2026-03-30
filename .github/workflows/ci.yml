@@ -111,6 +111,16 @@ jobs:
         with:
           registry-type: public
 
+      - name: Ensure ECR public registry alias exists
+        run: |
+          aws ecr-public describe-registries \
+            --region ${{ env.ECR_PUBLIC_REGION }} \
+            --query "registries[?contains(aliases[].name, '${{ env.REGISTRY_ALIAS }}')] | length(@)" \
+            --output text | grep -q '^1$' || \
+          aws ecr-public put-registry-alias \
+            --region ${{ env.ECR_PUBLIC_REGION }} \
+            --registry-alias ${{ env.REGISTRY_ALIAS }}
+
       - name: Ensure ECR public repository exists
         env:
           REPOSITORY: retail-store-sample-cart
@@ -169,6 +179,16 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
         with:
           registry-type: public
+
+      - name: Ensure ECR public registry alias exists
+        run: |
+          aws ecr-public describe-registries \
+            --region ${{ env.ECR_PUBLIC_REGION }} \
+            --query "registries[?contains(aliases[].name, '${{ env.REGISTRY_ALIAS }}')] | length(@)" \
+            --output text | grep -q '^1$' || \
+          aws ecr-public put-registry-alias \
+            --region ${{ env.ECR_PUBLIC_REGION }} \
+            --registry-alias ${{ env.REGISTRY_ALIAS }}
 
       - name: Ensure ECR public repository exists
         env:
@@ -229,6 +249,16 @@ jobs:
         with:
           registry-type: public
 
+      - name: Ensure ECR public registry alias exists
+        run: |
+          aws ecr-public describe-registries \
+            --region ${{ env.ECR_PUBLIC_REGION }} \
+            --query "registries[?contains(aliases[].name, '${{ env.REGISTRY_ALIAS }}')] | length(@)" \
+            --output text | grep -q '^1$' || \
+          aws ecr-public put-registry-alias \
+            --region ${{ env.ECR_PUBLIC_REGION }} \
+            --registry-alias ${{ env.REGISTRY_ALIAS }}
+
       - name: Ensure ECR public repository exists
         env:
           REPOSITORY: retail-store-sample-checkout
@@ -288,6 +318,16 @@ jobs:
         with:
           registry-type: public
 
+      - name: Ensure ECR public registry alias exists
+        run: |
+          aws ecr-public describe-registries \
+            --region ${{ env.ECR_PUBLIC_REGION }} \
+            --query "registries[?contains(aliases[].name, '${{ env.REGISTRY_ALIAS }}')] | length(@)" \
+            --output text | grep -q '^1$' || \
+          aws ecr-public put-registry-alias \
+            --region ${{ env.ECR_PUBLIC_REGION }} \
+            --registry-alias ${{ env.REGISTRY_ALIAS }}
+
       - name: Ensure ECR public repository exists
         env:
           REPOSITORY: retail-store-sample-orders
@@ -346,6 +386,16 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
         with:
           registry-type: public
+
+      - name: Ensure ECR public registry alias exists
+        run: |
+          aws ecr-public describe-registries \
+            --region ${{ env.ECR_PUBLIC_REGION }} \
+            --query "registries[?contains(aliases[].name, '${{ env.REGISTRY_ALIAS }}')] | length(@)" \
+            --output text | grep -q '^1$' || \
+          aws ecr-public put-registry-alias \
+            --region ${{ env.ECR_PUBLIC_REGION }} \
+            --registry-alias ${{ env.REGISTRY_ALIAS }}
 
       - name: Ensure ECR public repository exists
         env:
