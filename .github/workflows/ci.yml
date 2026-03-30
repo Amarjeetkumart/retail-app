@@ -20,6 +20,7 @@ permissions:
 env:
   AWS_REGION: ap-south-1
   ECR_PUBLIC_REGION: us-east-1
+  EKS_CLUSTER_NAME: retail-store-1wo0
 
 jobs:
   detect-changes:
@@ -171,7 +172,9 @@ jobs:
           git config --local user.name "GitHub Actions"
           git add src/cart/chart/values.yaml
           git commit -m "ci: update cart service image tag to ${{ github.sha }}" || true
-          git push
+          git fetch origin ${{ github.ref_name }}
+          git rebase origin/${{ github.ref_name }}
+          git push origin HEAD:${{ github.ref_name }}
 
   build-and-push-catalog:
     name: Build & Push Catalog Service
@@ -243,7 +246,9 @@ jobs:
           git config --local user.name "GitHub Actions"
           git add src/catalog/chart/values.yaml
           git commit -m "ci: update catalog service image tag to ${{ github.sha }}" || true
-          git push
+          git fetch origin ${{ github.ref_name }}
+          git rebase origin/${{ github.ref_name }}
+          git push origin HEAD:${{ github.ref_name }}
 
   build-and-push-checkout:
     name: Build & Push Checkout Service
@@ -315,7 +320,9 @@ jobs:
           git config --local user.name "GitHub Actions"
           git add src/checkout/chart/values.yaml
           git commit -m "ci: update checkout service image tag to ${{ github.sha }}" || true
-          git push
+          git fetch origin ${{ github.ref_name }}
+          git rebase origin/${{ github.ref_name }}
+          git push origin HEAD:${{ github.ref_name }}
 
   build-and-push-orders:
     name: Build & Push Orders Service
@@ -387,7 +394,9 @@ jobs:
           git config --local user.name "GitHub Actions"
           git add src/orders/chart/values.yaml
           git commit -m "ci: update orders service image tag to ${{ github.sha }}" || true
-          git push
+          git fetch origin ${{ github.ref_name }}
+          git rebase origin/${{ github.ref_name }}
+          git push origin HEAD:${{ github.ref_name }}
 
   build-and-push-ui:
     name: Build & Push UI Service
@@ -459,7 +468,9 @@ jobs:
           git config --local user.name "GitHub Actions"
           git add src/ui/chart/values.yaml
           git commit -m "ci: update ui service image tag to ${{ github.sha }}" || true
-          git push
+          git fetch origin ${{ github.ref_name }}
+          git rebase origin/${{ github.ref_name }}
+          git push origin HEAD:${{ github.ref_name }}
 
   deploy-cart:
     name: Deploy Cart to EKS
@@ -483,7 +494,7 @@ jobs:
         run: |
           aws eks update-kubeconfig \
             --region ${{ env.AWS_REGION }} \
-            --name retail-store-cluster \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
             --kubeconfig /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
 
@@ -531,7 +542,7 @@ jobs:
         run: |
           aws eks update-kubeconfig \
             --region ${{ env.AWS_REGION }} \
-            --name retail-store-cluster \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
             --kubeconfig /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
 
@@ -579,7 +590,7 @@ jobs:
         run: |
           aws eks update-kubeconfig \
             --region ${{ env.AWS_REGION }} \
-            --name retail-store-cluster \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
             --kubeconfig /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
 
@@ -627,7 +638,7 @@ jobs:
         run: |
           aws eks update-kubeconfig \
             --region ${{ env.AWS_REGION }} \
-            --name retail-store-cluster \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
             --kubeconfig /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
 
@@ -675,7 +686,7 @@ jobs:
         run: |
           aws eks update-kubeconfig \
             --region ${{ env.AWS_REGION }} \
-            --name retail-store-cluster \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
             --kubeconfig /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
 
