@@ -34,6 +34,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Detect changes
@@ -97,6 +98,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -158,6 +161,7 @@ jobs:
           git add src/cart/chart/values.yaml
           if ! git diff --cached --quiet; then
             git commit -m "Update cart image tag to ${{ github.sha }}"
+            git remote set-url origin https://x-access-token:${{ secrets.GH_PAT }}@github.com/Amarjeetkumart/retail-app.git
             git push origin HEAD:main
           fi
 
@@ -230,6 +234,7 @@ jobs:
           git add src/catalog/chart/values.yaml
           if ! git diff --cached --quiet; then
             git commit -m "Update catalog image tag to ${{ github.sha }}"
+            git remote set-url origin https://x-access-token:${{ secrets.GH_PAT }}@github.com/Amarjeetkumart/retail-app.git
             git push origin HEAD:main
           fi
 
@@ -241,6 +246,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -302,6 +309,7 @@ jobs:
           git add src/checkout/chart/values.yaml
           if ! git diff --cached --quiet; then
             git commit -m "Update checkout image tag to ${{ github.sha }}"
+            git remote set-url origin https://x-access-token:${{ secrets.GH_PAT }}@github.com/Amarjeetkumart/retail-app.git
             git push origin HEAD:main
           fi
 
@@ -313,6 +321,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -374,6 +384,7 @@ jobs:
           git add src/orders/chart/values.yaml
           if ! git diff --cached --quiet; then
             git commit -m "Update orders image tag to ${{ github.sha }}"
+            git remote set-url origin https://x-access-token:${{ secrets.GH_PAT }}@github.com/Amarjeetkumart/retail-app.git
             git push origin HEAD:main
           fi
 
@@ -385,6 +396,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -446,5 +459,6 @@ jobs:
           git add src/ui/chart/values.yaml
           if ! git diff --cached --quiet; then
             git commit -m "Update ui image tag to ${{ github.sha }}"
+            git remote set-url origin https://x-access-token:${{ secrets.GH_PAT }}@github.com/Amarjeetkumart/retail-app.git
             git push origin HEAD:main
           fi
