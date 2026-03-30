@@ -14,6 +14,9 @@ on:
       - 'src/**'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 env:
   AWS_REGION: ap-south-1
   ECR_PUBLIC_REGION: us-east-1
@@ -146,6 +149,22 @@ jobs:
           docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
           echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
+      - name: Update chart image tag
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/cart/chart/values.yaml
+
+      - name: Commit chart update
+        run: |
+          git config --local user.email "gitops@github.com"
+          git config --local user.name "GitOps Bot"
+          git add src/cart/chart/values.yaml
+          if ! git diff --cached --quiet; then
+            git commit -m "Update cart image tag to ${{ github.sha }}"
+            git push origin HEAD:main
+          fi
+
   build-and-push-catalog:
     name: Build & Push Catalog Service
     runs-on: ubuntu-latest
@@ -203,6 +222,22 @@ jobs:
           docker build -t $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG .
           docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
           echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update chart image tag
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/catalog/chart/values.yaml
+
+      - name: Commit chart update
+        run: |
+          git config --local user.email "gitops@github.com"
+          git config --local user.name "GitOps Bot"
+          git add src/catalog/chart/values.yaml
+          if ! git diff --cached --quiet; then
+            git commit -m "Update catalog image tag to ${{ github.sha }}"
+            git push origin HEAD:main
+          fi
 
   build-and-push-checkout:
     name: Build & Push Checkout Service
@@ -262,6 +297,22 @@ jobs:
           docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
           echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
+      - name: Update chart image tag
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/checkout/chart/values.yaml
+
+      - name: Commit chart update
+        run: |
+          git config --local user.email "gitops@github.com"
+          git config --local user.name "GitOps Bot"
+          git add src/checkout/chart/values.yaml
+          if ! git diff --cached --quiet; then
+            git commit -m "Update checkout image tag to ${{ github.sha }}"
+            git push origin HEAD:main
+          fi
+
   build-and-push-orders:
     name: Build & Push Orders Service
     runs-on: ubuntu-latest
@@ -320,6 +371,22 @@ jobs:
           docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
           echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
+      - name: Update chart image tag
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/orders/chart/values.yaml
+
+      - name: Commit chart update
+        run: |
+          git config --local user.email "gitops@github.com"
+          git config --local user.name "GitOps Bot"
+          git add src/orders/chart/values.yaml
+          if ! git diff --cached --quiet; then
+            git commit -m "Update orders image tag to ${{ github.sha }}"
+            git push origin HEAD:main
+          fi
+
   build-and-push-ui:
     name: Build & Push UI Service
     runs-on: ubuntu-latest
@@ -377,3 +444,19 @@ jobs:
           docker build -t $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG .
           docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
           echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update chart image tag
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/ui/chart/values.yaml
+
+      - name: Commit chart update
+        run: |
+          git config --local user.email "gitops@github.com"
+          git config --local user.name "GitOps Bot"
+          git add src/ui/chart/values.yaml
+          if ! git diff --cached --quiet; then
+            git commit -m "Update ui image tag to ${{ github.sha }}"
+            git push origin HEAD:main
+          fi
