@@ -6,12 +6,14 @@ on:
       - main
     paths:
       - 'src/**'
+      - '!src/**/chart/**'
       - '.github/workflows/ci.yml'
   pull_request:
     branches:
       - main
     paths:
       - 'src/**'
+      - '!src/**/chart/**'
   workflow_dispatch:
 
 permissions:
@@ -151,9 +153,17 @@ jobs:
 
       - name: Update chart image tag
         env:
+          IMAGE_REPOSITORY: ${{ steps.resolve-public-registry.outputs.registry_uri }}/retail-store-sample-cart
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/cart/chart/values.yaml
+          awk -v repo="$IMAGE_REPOSITORY" -v tag="$IMAGE_TAG" '
+          BEGIN { in_main_image = 0; updated_repo = 0; updated_tag = 0 }
+          /^image:/ { in_main_image = 1; print; next }
+          in_main_image && /^[[:space:]]*repository:/ && !updated_repo { print "  repository: " repo; updated_repo = 1; next }
+          in_main_image && /^[[:space:]]*tag:/ && !updated_tag { print "  tag: \"" tag "\""; updated_tag = 1; next }
+          /^[a-zA-Z]/ && !/^image:/ { in_main_image = 0 }
+          { print }
+          ' src/cart/chart/values.yaml > src/cart/chart/values.yaml.tmp && mv src/cart/chart/values.yaml.tmp src/cart/chart/values.yaml
 
       - name: Commit chart update
         run: |
@@ -225,9 +235,17 @@ jobs:
 
       - name: Update chart image tag
         env:
+          IMAGE_REPOSITORY: ${{ steps.resolve-public-registry.outputs.registry_uri }}/retail-store-sample-catalog
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/catalog/chart/values.yaml
+          awk -v repo="$IMAGE_REPOSITORY" -v tag="$IMAGE_TAG" '
+          BEGIN { in_main_image = 0; updated_repo = 0; updated_tag = 0 }
+          /^image:/ { in_main_image = 1; print; next }
+          in_main_image && /^[[:space:]]*repository:/ && !updated_repo { print "  repository: " repo; updated_repo = 1; next }
+          in_main_image && /^[[:space:]]*tag:/ && !updated_tag { print "  tag: \"" tag "\""; updated_tag = 1; next }
+          /^[a-zA-Z]/ && !/^image:/ { in_main_image = 0 }
+          { print }
+          ' src/catalog/chart/values.yaml > src/catalog/chart/values.yaml.tmp && mv src/catalog/chart/values.yaml.tmp src/catalog/chart/values.yaml
 
       - name: Commit chart update
         run: |
@@ -299,9 +317,17 @@ jobs:
 
       - name: Update chart image tag
         env:
+          IMAGE_REPOSITORY: ${{ steps.resolve-public-registry.outputs.registry_uri }}/retail-store-sample-checkout
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/checkout/chart/values.yaml
+          awk -v repo="$IMAGE_REPOSITORY" -v tag="$IMAGE_TAG" '
+          BEGIN { in_main_image = 0; updated_repo = 0; updated_tag = 0 }
+          /^image:/ { in_main_image = 1; print; next }
+          in_main_image && /^[[:space:]]*repository:/ && !updated_repo { print "  repository: " repo; updated_repo = 1; next }
+          in_main_image && /^[[:space:]]*tag:/ && !updated_tag { print "  tag: \"" tag "\""; updated_tag = 1; next }
+          /^[a-zA-Z]/ && !/^image:/ { in_main_image = 0 }
+          { print }
+          ' src/checkout/chart/values.yaml > src/checkout/chart/values.yaml.tmp && mv src/checkout/chart/values.yaml.tmp src/checkout/chart/values.yaml
 
       - name: Commit chart update
         run: |
@@ -373,9 +399,17 @@ jobs:
 
       - name: Update chart image tag
         env:
+          IMAGE_REPOSITORY: ${{ steps.resolve-public-registry.outputs.registry_uri }}/retail-store-sample-orders
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/orders/chart/values.yaml
+          awk -v repo="$IMAGE_REPOSITORY" -v tag="$IMAGE_TAG" '
+          BEGIN { in_main_image = 0; updated_repo = 0; updated_tag = 0 }
+          /^image:/ { in_main_image = 1; print; next }
+          in_main_image && /^[[:space:]]*repository:/ && !updated_repo { print "  repository: " repo; updated_repo = 1; next }
+          in_main_image && /^[[:space:]]*tag:/ && !updated_tag { print "  tag: \"" tag "\""; updated_tag = 1; next }
+          /^[a-zA-Z]/ && !/^image:/ { in_main_image = 0 }
+          { print }
+          ' src/orders/chart/values.yaml > src/orders/chart/values.yaml.tmp && mv src/orders/chart/values.yaml.tmp src/orders/chart/values.yaml
 
       - name: Commit chart update
         run: |
@@ -447,9 +481,17 @@ jobs:
 
       - name: Update chart image tag
         env:
+          IMAGE_REPOSITORY: ${{ steps.resolve-public-registry.outputs.registry_uri }}/retail-store-sample-ui
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/ui/chart/values.yaml
+          awk -v repo="$IMAGE_REPOSITORY" -v tag="$IMAGE_TAG" '
+          BEGIN { in_main_image = 0; updated_repo = 0; updated_tag = 0 }
+          /^image:/ { in_main_image = 1; print; next }
+          in_main_image && /^[[:space:]]*repository:/ && !updated_repo { print "  repository: " repo; updated_repo = 1; next }
+          in_main_image && /^[[:space:]]*tag:/ && !updated_tag { print "  tag: \"" tag "\""; updated_tag = 1; next }
+          /^[a-zA-Z]/ && !/^image:/ { in_main_image = 0 }
+          { print }
+          ' src/ui/chart/values.yaml > src/ui/chart/values.yaml.tmp && mv src/ui/chart/values.yaml.tmp src/ui/chart/values.yaml
 
       - name: Commit chart update
         run: |
