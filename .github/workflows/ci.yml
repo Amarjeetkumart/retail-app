@@ -14,6 +14,9 @@ on:
       - 'src/**'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 env:
   AWS_REGION: ap-south-1
   ECR_PUBLIC_REGION: us-east-1
@@ -38,6 +41,16 @@ jobs:
       - name: Detect changes
         id: detect
         run: |
+          if [ "${{ github.actor }}" = "github-actions[bot]" ]; then
+            echo "cart=false" >> $GITHUB_OUTPUT
+            echo "catalog=false" >> $GITHUB_OUTPUT
+            echo "checkout=false" >> $GITHUB_OUTPUT
+            echo "orders=false" >> $GITHUB_OUTPUT
+            echo "ui=false" >> $GITHUB_OUTPUT
+            echo "any=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
           if [ "${{ github.event_name }}" == "pull_request" ]; then
             BASE_REF="${{ github.base_ref }}"
             DIFF_CMD="git diff --name-only origin/${BASE_REF}...HEAD"
