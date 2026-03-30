@@ -70,6 +70,8 @@ module "retail_app_eks" {
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
 
+  depends_on = [module.vpc]
+
   # KMS configuration to avoid conflicts
   create_kms_key                  = true
   kms_key_description             = "EKS cluster ${local.cluster_name} encryption key"
