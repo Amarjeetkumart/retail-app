@@ -18,7 +18,6 @@ on:
 
 env:
   AWS_REGION: ap-south-1
-  ECR_PUBLIC_REGION: us-east-1
 
 jobs:
   detect-changes:
@@ -109,44 +108,58 @@ jobs:
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-        with:
-          registry-type: public
 
-      - name: Resolve ECR public registry URI
-        id: resolve-public-registry
+      - name: Resolve private ECR registry URI
+        id: resolve-registry
         run: |
-          REGISTRY_URI=$(aws ecr-public describe-registries \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
-            --query "registries[?aliases[?primaryRegistryAlias]].registryUri | [0]" \
-            --output text)
-          if [ -z "$REGISTRY_URI" ] || [ "$REGISTRY_URI" = "None" ]; then
-            echo "Unable to resolve the active ECR Public registry URI." >&2
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          if [ -z "$AWS_ACCOUNT_ID" ] || [ "$AWS_ACCOUNT_ID" = "None" ]; then
+            echo "Unable to resolve the AWS account ID." >&2
             exit 1
           fi
+          REGISTRY_URI="$AWS_ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
           echo "registry_uri=$REGISTRY_URI" >> $GITHUB_OUTPUT
 
-      - name: Ensure ECR public repository exists
+      - name: Ensure ECR repository exists
         env:
-          REPOSITORY: retail-store-sample-cart
+          REPOSITORY: retail-store-cart
         run: |
-          aws ecr-public describe-repositories \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
+          aws ecr describe-repositories \
+            --region ${{ env.AWS_REGION }} \
             --repository-names "$REPOSITORY" >/dev/null 2>&1 || \
-          aws ecr-public create-repository \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
+          aws ecr create-repository \
+            --region ${{ env.AWS_REGION }} \
             --repository-name "$REPOSITORY"
 
       - name: Build and push Docker image
         id: docker-build
         env:
-          REGISTRY_URI: ${{ steps.resolve-public-registry.outputs.registry_uri }}
-          REPOSITORY: retail-store-sample-cart
+          REGISTRY_URI: ${{ steps.resolve-registry.outputs.registry_uri }}
+          REPOSITORY: retail-store-cart
           IMAGE_TAG: ${{ github.sha }}
         run: |
           cd src/cart
           docker build -t $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG .
+          docker tag $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG $REGISTRY_URI/$REPOSITORY:latest
           docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
+          docker push $REGISTRY_URI/$REPOSITORY:latest
           echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update chart image tag
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/cart/chart/values.yaml
+
+      - name: Commit chart update
+        run: |
+          git config --local user.email "gitops@github.com"
+          git config --local user.name "GitOps Bot"
+          git add src/cart/chart/values.yaml
+          if ! git diff --cached --quiet; then
+            git commit -m "Update cart image tag to ${{ github.sha }}"
+            git push origin HEAD:main
+          fi
 
   build-and-push-catalog:
     name: Build & Push Catalog Service
@@ -167,44 +180,58 @@ jobs:
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-        with:
-          registry-type: public
 
-      - name: Resolve ECR public registry URI
-        id: resolve-public-registry
+      - name: Resolve private ECR registry URI
+        id: resolve-registry
         run: |
-          REGISTRY_URI=$(aws ecr-public describe-registries \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
-            --query "registries[?aliases[?primaryRegistryAlias]].registryUri | [0]" \
-            --output text)
-          if [ -z "$REGISTRY_URI" ] || [ "$REGISTRY_URI" = "None" ]; then
-            echo "Unable to resolve the active ECR Public registry URI." >&2
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          if [ -z "$AWS_ACCOUNT_ID" ] || [ "$AWS_ACCOUNT_ID" = "None" ]; then
+            echo "Unable to resolve the AWS account ID." >&2
             exit 1
           fi
+          REGISTRY_URI="$AWS_ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
           echo "registry_uri=$REGISTRY_URI" >> $GITHUB_OUTPUT
 
-      - name: Ensure ECR public repository exists
+      - name: Ensure ECR repository exists
         env:
-          REPOSITORY: retail-store-sample-catalog
+          REPOSITORY: retail-store-catalog
         run: |
-          aws ecr-public describe-repositories \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
+          aws ecr describe-repositories \
+            --region ${{ env.AWS_REGION }} \
             --repository-names "$REPOSITORY" >/dev/null 2>&1 || \
-          aws ecr-public create-repository \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
+          aws ecr create-repository \
+            --region ${{ env.AWS_REGION }} \
             --repository-name "$REPOSITORY"
 
       - name: Build and push Docker image
         id: docker-build
         env:
-          REGISTRY_URI: ${{ steps.resolve-public-registry.outputs.registry_uri }}
-          REPOSITORY: retail-store-sample-catalog
+          REGISTRY_URI: ${{ steps.resolve-registry.outputs.registry_uri }}
+          REPOSITORY: retail-store-catalog
           IMAGE_TAG: ${{ github.sha }}
         run: |
           cd src/catalog
           docker build -t $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG .
+          docker tag $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG $REGISTRY_URI/$REPOSITORY:latest
           docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
+          docker push $REGISTRY_URI/$REPOSITORY:latest
           echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update chart image tag
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/catalog/chart/values.yaml
+
+      - name: Commit chart update
+        run: |
+          git config --local user.email "gitops@github.com"
+          git config --local user.name "GitOps Bot"
+          git add src/catalog/chart/values.yaml
+          if ! git diff --cached --quiet; then
+            git commit -m "Update catalog image tag to ${{ github.sha }}"
+            git push origin HEAD:main
+          fi
 
   build-and-push-checkout:
     name: Build & Push Checkout Service
@@ -225,44 +252,58 @@ jobs:
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-        with:
-          registry-type: public
 
-      - name: Resolve ECR public registry URI
-        id: resolve-public-registry
+      - name: Resolve private ECR registry URI
+        id: resolve-registry
         run: |
-          REGISTRY_URI=$(aws ecr-public describe-registries \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
-            --query "registries[?aliases[?primaryRegistryAlias]].registryUri | [0]" \
-            --output text)
-          if [ -z "$REGISTRY_URI" ] || [ "$REGISTRY_URI" = "None" ]; then
-            echo "Unable to resolve the active ECR Public registry URI." >&2
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          if [ -z "$AWS_ACCOUNT_ID" ] || [ "$AWS_ACCOUNT_ID" = "None" ]; then
+            echo "Unable to resolve the AWS account ID." >&2
             exit 1
           fi
+          REGISTRY_URI="$AWS_ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
           echo "registry_uri=$REGISTRY_URI" >> $GITHUB_OUTPUT
 
-      - name: Ensure ECR public repository exists
+      - name: Ensure ECR repository exists
         env:
-          REPOSITORY: retail-store-sample-checkout
+          REPOSITORY: retail-store-checkout
         run: |
-          aws ecr-public describe-repositories \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
+          aws ecr describe-repositories \
+            --region ${{ env.AWS_REGION }} \
             --repository-names "$REPOSITORY" >/dev/null 2>&1 || \
-          aws ecr-public create-repository \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
+          aws ecr create-repository \
+            --region ${{ env.AWS_REGION }} \
             --repository-name "$REPOSITORY"
 
       - name: Build and push Docker image
         id: docker-build
         env:
-          REGISTRY_URI: ${{ steps.resolve-public-registry.outputs.registry_uri }}
-          REPOSITORY: retail-store-sample-checkout
+          REGISTRY_URI: ${{ steps.resolve-registry.outputs.registry_uri }}
+          REPOSITORY: retail-store-checkout
           IMAGE_TAG: ${{ github.sha }}
         run: |
           cd src/checkout
           docker build -t $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG .
+          docker tag $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG $REGISTRY_URI/$REPOSITORY:latest
           docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
+          docker push $REGISTRY_URI/$REPOSITORY:latest
           echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update chart image tag
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/checkout/chart/values.yaml
+
+      - name: Commit chart update
+        run: |
+          git config --local user.email "gitops@github.com"
+          git config --local user.name "GitOps Bot"
+          git add src/checkout/chart/values.yaml
+          if ! git diff --cached --quiet; then
+            git commit -m "Update checkout image tag to ${{ github.sha }}"
+            git push origin HEAD:main
+          fi
 
   build-and-push-orders:
     name: Build & Push Orders Service
@@ -283,44 +324,58 @@ jobs:
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-        with:
-          registry-type: public
 
-      - name: Resolve ECR public registry URI
-        id: resolve-public-registry
+      - name: Resolve private ECR registry URI
+        id: resolve-registry
         run: |
-          REGISTRY_URI=$(aws ecr-public describe-registries \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
-            --query "registries[?aliases[?primaryRegistryAlias]].registryUri | [0]" \
-            --output text)
-          if [ -z "$REGISTRY_URI" ] || [ "$REGISTRY_URI" = "None" ]; then
-            echo "Unable to resolve the active ECR Public registry URI." >&2
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          if [ -z "$AWS_ACCOUNT_ID" ] || [ "$AWS_ACCOUNT_ID" = "None" ]; then
+            echo "Unable to resolve the AWS account ID." >&2
             exit 1
           fi
+          REGISTRY_URI="$AWS_ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
           echo "registry_uri=$REGISTRY_URI" >> $GITHUB_OUTPUT
 
-      - name: Ensure ECR public repository exists
+      - name: Ensure ECR repository exists
         env:
-          REPOSITORY: retail-store-sample-orders
+          REPOSITORY: retail-store-orders
         run: |
-          aws ecr-public describe-repositories \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
+          aws ecr describe-repositories \
+            --region ${{ env.AWS_REGION }} \
             --repository-names "$REPOSITORY" >/dev/null 2>&1 || \
-          aws ecr-public create-repository \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
+          aws ecr create-repository \
+            --region ${{ env.AWS_REGION }} \
             --repository-name "$REPOSITORY"
 
       - name: Build and push Docker image
         id: docker-build
         env:
-          REGISTRY_URI: ${{ steps.resolve-public-registry.outputs.registry_uri }}
-          REPOSITORY: retail-store-sample-orders
+          REGISTRY_URI: ${{ steps.resolve-registry.outputs.registry_uri }}
+          REPOSITORY: retail-store-orders
           IMAGE_TAG: ${{ github.sha }}
         run: |
           cd src/orders
           docker build -t $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG .
+          docker tag $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG $REGISTRY_URI/$REPOSITORY:latest
           docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
+          docker push $REGISTRY_URI/$REPOSITORY:latest
           echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update chart image tag
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/orders/chart/values.yaml
+
+      - name: Commit chart update
+        run: |
+          git config --local user.email "gitops@github.com"
+          git config --local user.name "GitOps Bot"
+          git add src/orders/chart/values.yaml
+          if ! git diff --cached --quiet; then
+            git commit -m "Update orders image tag to ${{ github.sha }}"
+            git push origin HEAD:main
+          fi
 
   build-and-push-ui:
     name: Build & Push UI Service
@@ -341,41 +396,55 @@ jobs:
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-        with:
-          registry-type: public
 
-      - name: Resolve ECR public registry URI
-        id: resolve-public-registry
+      - name: Resolve private ECR registry URI
+        id: resolve-registry
         run: |
-          REGISTRY_URI=$(aws ecr-public describe-registries \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
-            --query "registries[?aliases[?primaryRegistryAlias]].registryUri | [0]" \
-            --output text)
-          if [ -z "$REGISTRY_URI" ] || [ "$REGISTRY_URI" = "None" ]; then
-            echo "Unable to resolve the active ECR Public registry URI." >&2
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          if [ -z "$AWS_ACCOUNT_ID" ] || [ "$AWS_ACCOUNT_ID" = "None" ]; then
+            echo "Unable to resolve the AWS account ID." >&2
             exit 1
           fi
+          REGISTRY_URI="$AWS_ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
           echo "registry_uri=$REGISTRY_URI" >> $GITHUB_OUTPUT
 
-      - name: Ensure ECR public repository exists
+      - name: Ensure ECR repository exists
         env:
-          REPOSITORY: retail-store-sample-ui
+          REPOSITORY: retail-store-ui
         run: |
-          aws ecr-public describe-repositories \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
+          aws ecr describe-repositories \
+            --region ${{ env.AWS_REGION }} \
             --repository-names "$REPOSITORY" >/dev/null 2>&1 || \
-          aws ecr-public create-repository \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
+          aws ecr create-repository \
+            --region ${{ env.AWS_REGION }} \
             --repository-name "$REPOSITORY"
 
       - name: Build and push Docker image
         id: docker-build
         env:
-          REGISTRY_URI: ${{ steps.resolve-public-registry.outputs.registry_uri }}
-          REPOSITORY: retail-store-sample-ui
+          REGISTRY_URI: ${{ steps.resolve-registry.outputs.registry_uri }}
+          REPOSITORY: retail-store-ui
           IMAGE_TAG: ${{ github.sha }}
         run: |
           cd src/ui
           docker build -t $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG .
+          docker tag $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG $REGISTRY_URI/$REPOSITORY:latest
           docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
+          docker push $REGISTRY_URI/$REPOSITORY:latest
           echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update chart image tag
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/ui/chart/values.yaml
+
+      - name: Commit chart update
+        run: |
+          git config --local user.email "gitops@github.com"
+          git config --local user.name "GitOps Bot"
+          git add src/ui/chart/values.yaml
+          if ! git diff --cached --quiet; then
+            git commit -m "Update ui image tag to ${{ github.sha }}"
+            git push origin HEAD:main
+          fi
