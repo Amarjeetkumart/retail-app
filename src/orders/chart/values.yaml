@@ -6,7 +6,7 @@ replicaCount: 1
 image:
   repository: public.ecr.aws/aws-containers/retail-store-sample-orders
   pullPolicy: Always
-  tag: "1.2.2"
+  tag: "761c0249f23ea6cbff3aa5c0bb2ed9bdb29ce834"
 imagePullSecrets:
   - name: regcred
 nameOverride: ""
@@ -81,7 +81,7 @@ postgresql:
   image:
     repository: public.ecr.aws/docker/library/postgres
     pullPolicy: IfNotPresent
-    tag: "13"
+    tag: "761c0249f23ea6cbff3aa5c0bb2ed9bdb29ce834"
   service:
     type: ClusterIP
     port: 5432
@@ -102,7 +102,7 @@ rabbitmq:
   image:
     repository: public.ecr.aws/docker/library/rabbitmq
     pullPolicy: IfNotPresent
-    tag: "3.8-management"
+    tag: "761c0249f23ea6cbff3aa5c0bb2ed9bdb29ce834"
   service:
     type: ClusterIP
     amqp:
