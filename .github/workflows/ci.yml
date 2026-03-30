@@ -17,7 +17,6 @@ on:
 env:
   AWS_REGION: ap-south-1
   ECR_PUBLIC_REGION: us-east-1
-  REGISTRY_ALIAS: retail-store
 
 jobs:
   detect-changes:
@@ -111,15 +110,18 @@ jobs:
         with:
           registry-type: public
 
-      - name: Ensure ECR public registry alias exists
+      - name: Resolve ECR public registry URI
+        id: resolve-public-registry
         run: |
-          aws ecr-public describe-registries \
+          REGISTRY_URI=$(aws ecr-public describe-registries \
             --region ${{ env.ECR_PUBLIC_REGION }} \
-            --query "registries[?contains(aliases[].name, '${{ env.REGISTRY_ALIAS }}')] | length(@)" \
-            --output text | grep -q '^1$' || \
-          aws ecr-public put-registry-alias \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
-            --registry-alias ${{ env.REGISTRY_ALIAS }}
+            --query "registries[?aliases[?primaryRegistryAlias]].registryUri | [0]" \
+            --output text)
+          if [ -z "$REGISTRY_URI" ] || [ "$REGISTRY_URI" = "None" ]; then
+            echo "Unable to resolve the active ECR Public registry URI." >&2
+            exit 1
+          fi
+          echo "registry_uri=$REGISTRY_URI" >> $GITHUB_OUTPUT
 
       - name: Ensure ECR public repository exists
         env:
@@ -135,14 +137,14 @@ jobs:
       - name: Build and push Docker image
         id: docker-build
         env:
-          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REGISTRY_URI: ${{ steps.resolve-public-registry.outputs.registry_uri }}
           REPOSITORY: retail-store-sample-cart
           IMAGE_TAG: ${{ github.sha }}
         run: |
           cd src/cart
-          docker build -t $REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG .
-          docker push $REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG
-          echo "image_uri=$REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          docker build -t $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
+          echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
       - name: Update Helm values
         env:
@@ -180,15 +182,18 @@ jobs:
         with:
           registry-type: public
 
-      - name: Ensure ECR public registry alias exists
+      - name: Resolve ECR public registry URI
+        id: resolve-public-registry
         run: |
-          aws ecr-public describe-registries \
+          REGISTRY_URI=$(aws ecr-public describe-registries \
             --region ${{ env.ECR_PUBLIC_REGION }} \
-            --query "registries[?contains(aliases[].name, '${{ env.REGISTRY_ALIAS }}')] | length(@)" \
-            --output text | grep -q '^1$' || \
-          aws ecr-public put-registry-alias \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
-            --registry-alias ${{ env.REGISTRY_ALIAS }}
+            --query "registries[?aliases[?primaryRegistryAlias]].registryUri | [0]" \
+            --output text)
+          if [ -z "$REGISTRY_URI" ] || [ "$REGISTRY_URI" = "None" ]; then
+            echo "Unable to resolve the active ECR Public registry URI." >&2
+            exit 1
+          fi
+          echo "registry_uri=$REGISTRY_URI" >> $GITHUB_OUTPUT
 
       - name: Ensure ECR public repository exists
         env:
@@ -204,14 +209,14 @@ jobs:
       - name: Build and push Docker image
         id: docker-build
         env:
-          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REGISTRY_URI: ${{ steps.resolve-public-registry.outputs.registry_uri }}
           REPOSITORY: retail-store-sample-catalog
           IMAGE_TAG: ${{ github.sha }}
         run: |
           cd src/catalog
-          docker build -t $REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG .
-          docker push $REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG
-          echo "image_uri=$REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          docker build -t $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
+          echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
       - name: Update Helm values
         env:
@@ -249,15 +254,18 @@ jobs:
         with:
           registry-type: public
 
-      - name: Ensure ECR public registry alias exists
+      - name: Resolve ECR public registry URI
+        id: resolve-public-registry
         run: |
-          aws ecr-public describe-registries \
+          REGISTRY_URI=$(aws ecr-public describe-registries \
             --region ${{ env.ECR_PUBLIC_REGION }} \
-            --query "registries[?contains(aliases[].name, '${{ env.REGISTRY_ALIAS }}')] | length(@)" \
-            --output text | grep -q '^1$' || \
-          aws ecr-public put-registry-alias \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
-            --registry-alias ${{ env.REGISTRY_ALIAS }}
+            --query "registries[?aliases[?primaryRegistryAlias]].registryUri | [0]" \
+            --output text)
+          if [ -z "$REGISTRY_URI" ] || [ "$REGISTRY_URI" = "None" ]; then
+            echo "Unable to resolve the active ECR Public registry URI." >&2
+            exit 1
+          fi
+          echo "registry_uri=$REGISTRY_URI" >> $GITHUB_OUTPUT
 
       - name: Ensure ECR public repository exists
         env:
@@ -273,14 +281,14 @@ jobs:
       - name: Build and push Docker image
         id: docker-build
         env:
-          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REGISTRY_URI: ${{ steps.resolve-public-registry.outputs.registry_uri }}
           REPOSITORY: retail-store-sample-checkout
           IMAGE_TAG: ${{ github.sha }}
         run: |
           cd src/checkout
-          docker build -t $REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG .
-          docker push $REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG
-          echo "image_uri=$REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          docker build -t $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
+          echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
       - name: Update Helm values
         env:
@@ -318,15 +326,18 @@ jobs:
         with:
           registry-type: public
 
-      - name: Ensure ECR public registry alias exists
+      - name: Resolve ECR public registry URI
+        id: resolve-public-registry
         run: |
-          aws ecr-public describe-registries \
+          REGISTRY_URI=$(aws ecr-public describe-registries \
             --region ${{ env.ECR_PUBLIC_REGION }} \
-            --query "registries[?contains(aliases[].name, '${{ env.REGISTRY_ALIAS }}')] | length(@)" \
-            --output text | grep -q '^1$' || \
-          aws ecr-public put-registry-alias \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
-            --registry-alias ${{ env.REGISTRY_ALIAS }}
+            --query "registries[?aliases[?primaryRegistryAlias]].registryUri | [0]" \
+            --output text)
+          if [ -z "$REGISTRY_URI" ] || [ "$REGISTRY_URI" = "None" ]; then
+            echo "Unable to resolve the active ECR Public registry URI." >&2
+            exit 1
+          fi
+          echo "registry_uri=$REGISTRY_URI" >> $GITHUB_OUTPUT
 
       - name: Ensure ECR public repository exists
         env:
@@ -342,14 +353,14 @@ jobs:
       - name: Build and push Docker image
         id: docker-build
         env:
-          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REGISTRY_URI: ${{ steps.resolve-public-registry.outputs.registry_uri }}
           REPOSITORY: retail-store-sample-orders
           IMAGE_TAG: ${{ github.sha }}
         run: |
           cd src/orders
-          docker build -t $REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG .
-          docker push $REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG
-          echo "image_uri=$REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          docker build -t $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
+          echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
       - name: Update Helm values
         env:
@@ -387,15 +398,18 @@ jobs:
         with:
           registry-type: public
 
-      - name: Ensure ECR public registry alias exists
+      - name: Resolve ECR public registry URI
+        id: resolve-public-registry
         run: |
-          aws ecr-public describe-registries \
+          REGISTRY_URI=$(aws ecr-public describe-registries \
             --region ${{ env.ECR_PUBLIC_REGION }} \
-            --query "registries[?contains(aliases[].name, '${{ env.REGISTRY_ALIAS }}')] | length(@)" \
-            --output text | grep -q '^1$' || \
-          aws ecr-public put-registry-alias \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
-            --registry-alias ${{ env.REGISTRY_ALIAS }}
+            --query "registries[?aliases[?primaryRegistryAlias]].registryUri | [0]" \
+            --output text)
+          if [ -z "$REGISTRY_URI" ] || [ "$REGISTRY_URI" = "None" ]; then
+            echo "Unable to resolve the active ECR Public registry URI." >&2
+            exit 1
+          fi
+          echo "registry_uri=$REGISTRY_URI" >> $GITHUB_OUTPUT
 
       - name: Ensure ECR public repository exists
         env:
@@ -411,14 +425,14 @@ jobs:
       - name: Build and push Docker image
         id: docker-build
         env:
-          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REGISTRY_URI: ${{ steps.resolve-public-registry.outputs.registry_uri }}
           REPOSITORY: retail-store-sample-ui
           IMAGE_TAG: ${{ github.sha }}
         run: |
           cd src/ui
-          docker build -t $REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG .
-          docker push $REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG
-          echo "image_uri=$REGISTRY/${{ env.REGISTRY_ALIAS }}/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          docker build -t $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
+          echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
       - name: Update Helm values
         env:
