@@ -16,9 +16,6 @@ on:
       - '!src/**/chart/**'
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 env:
   AWS_REGION: ap-south-1
   ECR_PUBLIC_REGION: us-east-1
@@ -151,30 +148,6 @@ jobs:
           docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
           echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-      - name: Update chart image tag
-        env:
-          IMAGE_REPOSITORY: ${{ steps.resolve-public-registry.outputs.registry_uri }}/retail-store-sample-cart
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          awk -v repo="$IMAGE_REPOSITORY" -v tag="$IMAGE_TAG" '
-          BEGIN { in_main_image = 0; updated_repo = 0; updated_tag = 0 }
-          /^image:/ { in_main_image = 1; print; next }
-          in_main_image && /^[[:space:]]*repository:/ && !updated_repo { print "  repository: " repo; updated_repo = 1; next }
-          in_main_image && /^[[:space:]]*tag:/ && !updated_tag { print "  tag: \"" tag "\""; updated_tag = 1; next }
-          /^[a-zA-Z]/ && !/^image:/ { in_main_image = 0 }
-          { print }
-          ' src/cart/chart/values.yaml > src/cart/chart/values.yaml.tmp && mv src/cart/chart/values.yaml.tmp src/cart/chart/values.yaml
-
-      - name: Commit chart update
-        run: |
-          git config --local user.email "gitops@github.com"
-          git config --local user.name "GitOps Bot"
-          git add src/cart/chart/values.yaml
-          if ! git diff --cached --quiet; then
-            git commit -m "Update cart image tag to ${{ github.sha }}"
-            git push origin HEAD:main
-          fi
-
   build-and-push-catalog:
     name: Build & Push Catalog Service
     runs-on: ubuntu-latest
@@ -232,30 +205,6 @@ jobs:
           docker build -t $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG .
           docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
           echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
-
-      - name: Update chart image tag
-        env:
-          IMAGE_REPOSITORY: ${{ steps.resolve-public-registry.outputs.registry_uri }}/retail-store-sample-catalog
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          awk -v repo="$IMAGE_REPOSITORY" -v tag="$IMAGE_TAG" '
-          BEGIN { in_main_image = 0; updated_repo = 0; updated_tag = 0 }
-          /^image:/ { in_main_image = 1; print; next }
-          in_main_image && /^[[:space:]]*repository:/ && !updated_repo { print "  repository: " repo; updated_repo = 1; next }
-          in_main_image && /^[[:space:]]*tag:/ && !updated_tag { print "  tag: \"" tag "\""; updated_tag = 1; next }
-          /^[a-zA-Z]/ && !/^image:/ { in_main_image = 0 }
-          { print }
-          ' src/catalog/chart/values.yaml > src/catalog/chart/values.yaml.tmp && mv src/catalog/chart/values.yaml.tmp src/catalog/chart/values.yaml
-
-      - name: Commit chart update
-        run: |
-          git config --local user.email "gitops@github.com"
-          git config --local user.name "GitOps Bot"
-          git add src/catalog/chart/values.yaml
-          if ! git diff --cached --quiet; then
-            git commit -m "Update catalog image tag to ${{ github.sha }}"
-            git push origin HEAD:main
-          fi
 
   build-and-push-checkout:
     name: Build & Push Checkout Service
@@ -315,30 +264,6 @@ jobs:
           docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
           echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-      - name: Update chart image tag
-        env:
-          IMAGE_REPOSITORY: ${{ steps.resolve-public-registry.outputs.registry_uri }}/retail-store-sample-checkout
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          awk -v repo="$IMAGE_REPOSITORY" -v tag="$IMAGE_TAG" '
-          BEGIN { in_main_image = 0; updated_repo = 0; updated_tag = 0 }
-          /^image:/ { in_main_image = 1; print; next }
-          in_main_image && /^[[:space:]]*repository:/ && !updated_repo { print "  repository: " repo; updated_repo = 1; next }
-          in_main_image && /^[[:space:]]*tag:/ && !updated_tag { print "  tag: \"" tag "\""; updated_tag = 1; next }
-          /^[a-zA-Z]/ && !/^image:/ { in_main_image = 0 }
-          { print }
-          ' src/checkout/chart/values.yaml > src/checkout/chart/values.yaml.tmp && mv src/checkout/chart/values.yaml.tmp src/checkout/chart/values.yaml
-
-      - name: Commit chart update
-        run: |
-          git config --local user.email "gitops@github.com"
-          git config --local user.name "GitOps Bot"
-          git add src/checkout/chart/values.yaml
-          if ! git diff --cached --quiet; then
-            git commit -m "Update checkout image tag to ${{ github.sha }}"
-            git push origin HEAD:main
-          fi
-
   build-and-push-orders:
     name: Build & Push Orders Service
     runs-on: ubuntu-latest
@@ -397,30 +322,6 @@ jobs:
           docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
           echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-      - name: Update chart image tag
-        env:
-          IMAGE_REPOSITORY: ${{ steps.resolve-public-registry.outputs.registry_uri }}/retail-store-sample-orders
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          awk -v repo="$IMAGE_REPOSITORY" -v tag="$IMAGE_TAG" '
-          BEGIN { in_main_image = 0; updated_repo = 0; updated_tag = 0 }
-          /^image:/ { in_main_image = 1; print; next }
-          in_main_image && /^[[:space:]]*repository:/ && !updated_repo { print "  repository: " repo; updated_repo = 1; next }
-          in_main_image && /^[[:space:]]*tag:/ && !updated_tag { print "  tag: \"" tag "\""; updated_tag = 1; next }
-          /^[a-zA-Z]/ && !/^image:/ { in_main_image = 0 }
-          { print }
-          ' src/orders/chart/values.yaml > src/orders/chart/values.yaml.tmp && mv src/orders/chart/values.yaml.tmp src/orders/chart/values.yaml
-
-      - name: Commit chart update
-        run: |
-          git config --local user.email "gitops@github.com"
-          git config --local user.name "GitOps Bot"
-          git add src/orders/chart/values.yaml
-          if ! git diff --cached --quiet; then
-            git commit -m "Update orders image tag to ${{ github.sha }}"
-            git push origin HEAD:main
-          fi
-
   build-and-push-ui:
     name: Build & Push UI Service
     runs-on: ubuntu-latest
@@ -478,27 +379,3 @@ jobs:
           docker build -t $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG .
           docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
           echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
-
-      - name: Update chart image tag
-        env:
-          IMAGE_REPOSITORY: ${{ steps.resolve-public-registry.outputs.registry_uri }}/retail-store-sample-ui
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          awk -v repo="$IMAGE_REPOSITORY" -v tag="$IMAGE_TAG" '
-          BEGIN { in_main_image = 0; updated_repo = 0; updated_tag = 0 }
-          /^image:/ { in_main_image = 1; print; next }
-          in_main_image && /^[[:space:]]*repository:/ && !updated_repo { print "  repository: " repo; updated_repo = 1; next }
-          in_main_image && /^[[:space:]]*tag:/ && !updated_tag { print "  tag: \"" tag "\""; updated_tag = 1; next }
-          /^[a-zA-Z]/ && !/^image:/ { in_main_image = 0 }
-          { print }
-          ' src/ui/chart/values.yaml > src/ui/chart/values.yaml.tmp && mv src/ui/chart/values.yaml.tmp src/ui/chart/values.yaml
-
-      - name: Commit chart update
-        run: |
-          git config --local user.email "gitops@github.com"
-          git config --local user.name "GitOps Bot"
-          git add src/ui/chart/values.yaml
-          if ! git diff --cached --quiet; then
-            git commit -m "Update ui image tag to ${{ github.sha }}"
-            git push origin HEAD:main
-          fi
