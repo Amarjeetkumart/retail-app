@@ -161,7 +161,8 @@ jobs:
           git add src/cart/chart/values.yaml
           if ! git diff --cached --quiet; then
             git commit -m "Update cart image tag to ${{ github.sha }}"
-            git push origin HEAD:gitops
+            git fetch origin gitops
+            git push --force-with-lease origin HEAD:gitops
           fi
 
   build-and-push-catalog:
@@ -233,7 +234,8 @@ jobs:
           git add src/catalog/chart/values.yaml
           if ! git diff --cached --quiet; then
             git commit -m "Update catalog image tag to ${{ github.sha }}"
-            git push origin HEAD:gitops
+            git fetch origin gitops
+            git push --force-with-lease origin HEAD:gitops
           fi
 
   build-and-push-checkout:
@@ -305,7 +307,8 @@ jobs:
           git add src/checkout/chart/values.yaml
           if ! git diff --cached --quiet; then
             git commit -m "Update checkout image tag to ${{ github.sha }}"
-            git push origin HEAD:gitops
+            git fetch origin gitops
+            git push --force-with-lease origin HEAD:gitops
           fi
 
   build-and-push-orders:
@@ -377,7 +380,8 @@ jobs:
           git add src/orders/chart/values.yaml
           if ! git diff --cached --quiet; then
             git commit -m "Update orders image tag to ${{ github.sha }}"
-            git push origin HEAD:gitops
+            git fetch origin gitops
+            git push --force-with-lease origin HEAD:gitops
           fi
 
   build-and-push-ui:
@@ -449,5 +453,6 @@ jobs:
           git add src/ui/chart/values.yaml
           if ! git diff --cached --quiet; then
             git commit -m "Update ui image tag to ${{ github.sha }}"
-            git push origin HEAD:gitops
+            git fetch origin gitops
+            git push --force-with-lease origin HEAD:gitops
           fi
