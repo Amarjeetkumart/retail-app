@@ -1,102 +1,86 @@
-name: CI - Build and Push to ECR
+name: Deploy
 
 on:
   push:
-    branches:
-      - main
+    branches: [gitops]
     paths:
-      - 'src/**'
-      - '.github/workflows/ci.yml'
-  pull_request:
-    branches:
-      - main
-    paths:
-      - 'src/**'
+      - src/**
+      - '!src/**/chart/values.yaml'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 env:
-  AWS_REGION: ap-south-1
-  ECR_PUBLIC_REGION: us-east-1
-  EKS_CLUSTER_NAME: retail-store-1wo0
+  AWS_REGION: ${{ secrets.AWS_REGION }}
 
 jobs:
   detect-changes:
-    name: Detect Service Changes
+    name: Detect Changed Services
     runs-on: ubuntu-latest
     outputs:
-      cart: ${{ steps.detect.outputs.cart }}
-      catalog: ${{ steps.detect.outputs.catalog }}
-      checkout: ${{ steps.detect.outputs.checkout }}
-      orders: ${{ steps.detect.outputs.orders }}
-      ui: ${{ steps.detect.outputs.ui }}
-      any: ${{ steps.detect.outputs.any }}
+      changed-services: ${{ steps.changes.outputs.changed-services }}
+      matrix: ${{ steps.changes.outputs.matrix }}
+      has-changes: ${{ steps.changes.outputs.has-changes }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 2
 
-      - name: Detect changes
-        id: detect
+      - name: Detect changed services
+        id: changes
         run: |
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            BASE_REF="${{ github.base_ref }}"
-            DIFF_CMD="git diff --name-only origin/${BASE_REF}...HEAD"
-          else
-            DIFF_CMD="git diff --name-only ${{ github.event.before }} ${{ github.event.after }}"
-          fi
-          
-          CHANGED_FILES=$($DIFF_CMD)
-          echo "Changed files:"
-          echo "$CHANGED_FILES"
-          
-          ANY_CHANGE=false
-          
-          if echo "$CHANGED_FILES" | grep -q "^src/cart/"; then
-            echo "cart=true" >> $GITHUB_OUTPUT
-            ANY_CHANGE=true
-          else
-            echo "cart=false" >> $GITHUB_OUTPUT
-          fi
-          
-          if echo "$CHANGED_FILES" | grep -q "^src/catalog/"; then
-            echo "catalog=true" >> $GITHUB_OUTPUT
-            ANY_CHANGE=true
-          else
-            echo "catalog=false" >> $GITHUB_OUTPUT
-          fi
-          
-          if echo "$CHANGED_FILES" | grep -q "^src/checkout/"; then
-            echo "checkout=true" >> $GITHUB_OUTPUT
-            ANY_CHANGE=true
-          else
-            echo "checkout=false" >> $GITHUB_OUTPUT
-          fi
-          
-          if echo "$CHANGED_FILES" | grep -q "^src/orders/"; then
-            echo "orders=true" >> $GITHUB_OUTPUT
-            ANY_CHANGE=true
-          else
-            echo "orders=false" >> $GITHUB_OUTPUT
-          fi
-          
-          if echo "$CHANGED_FILES" | grep -q "^src/ui/"; then
-            echo "ui=true" >> $GITHUB_OUTPUT
-            ANY_CHANGE=true
-          else
-            echo "ui=false" >> $GITHUB_OUTPUT
-          fi
-          
-          echo "any=$ANY_CHANGE" >> $GITHUB_OUTPUT
+          SERVICES=("ui" "catalog" "cart" "checkout" "orders")
+          CHANGED_SERVICES=()
 
-  build-and-push-cart:
-    name: Build & Push Cart Service
+          echo "Checking for changes in services..."
+
+          for service in "${SERVICES[@]}"; do
+            if git diff --name-only HEAD~1 HEAD | grep -q "^src/$service/" || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              CHANGED_SERVICES+=("$service")
+              echo "Changes detected in: $service"
+            else
+              echo "No changes in: $service"
+            fi
+          done
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual trigger - building all services"
+            CHANGED_SERVICES=("ui" "catalog" "cart" "checkout" "orders")
+          fi
+
+          if [ ${#CHANGED_SERVICES[@]} -eq 0 ]; then
+            echo "No services changed"
+            echo "has-changes=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          MATRIX_JSON="["
+          for i in "${!CHANGED_SERVICES[@]}"; do
+            if [ $i -gt 0 ]; then
+              MATRIX_JSON+="," 
+            fi
+            MATRIX_JSON+="\"${CHANGED_SERVICES[$i]}\""
+          done
+          MATRIX_JSON+="]"
+
+          echo "changed-services=${CHANGED_SERVICES[*]}" >> $GITHUB_OUTPUT
+          echo "matrix={\"service\":$MATRIX_JSON}" >> $GITHUB_OUTPUT
+          echo "has-changes=true" >> $GITHUB_OUTPUT
+
+          echo "Services to build: ${CHANGED_SERVICES[*]}"
+          echo "Generated matrix: {\"service\":$MATRIX_JSON}"
+
+  deploy:
+    name: Deploy ${{ matrix.service }}
     runs-on: ubuntu-latest
     needs: detect-changes
-    if: needs.detect-changes.outputs.cart == 'true' && github.event_name != 'pull_request'
+    if: needs.detect-changes.outputs.has-changes == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -105,546 +89,136 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR
+      - name: Login to ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-        with:
-          registry-type: public
 
-      - name: Resolve ECR public registry URI
-        id: resolve-public-registry
+      - name: Build and push ${{ matrix.service }}
         run: |
-          REGISTRY_URI=$(aws ecr-public describe-registries \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
-            --query "registries[?aliases[?primaryRegistryAlias]].registryUri | [0]" \
-            --output text)
-          if [ -z "$REGISTRY_URI" ] || [ "$REGISTRY_URI" = "None" ]; then
-            echo "Unable to resolve the active ECR Public registry URI." >&2
+          SERVICE="${{ matrix.service }}"
+          TAG="$(echo ${{ github.sha }} | cut -c1-7)"
+          AWS_ACCOUNT_ID="${{ secrets.AWS_ACCOUNT_ID }}"
+          ECR_REPO="${AWS_ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/retail-store-${SERVICE}"
+
+          echo "Building ${SERVICE}:${TAG}"
+
+          aws ecr describe-repositories --repository-names "retail-store-${SERVICE}" >/dev/null 2>&1 || \
+          aws ecr create-repository --repository-name "retail-store-${SERVICE}" \
+            --image-scanning-configuration scanOnPush=true \
+            --encryption-configuration encryptionType=AES256
+
+          docker build -t "${ECR_REPO}:${TAG}" -t "${ECR_REPO}:latest" "src/${SERVICE}/"
+          docker push "${ECR_REPO}:${TAG}"
+          docker push "${ECR_REPO}:latest"
+
+          echo "Pushed ${ECR_REPO}:${TAG}"
+          echo "ECR_REPO=${ECR_REPO}" >> $GITHUB_ENV
+
+      - name: Update Helm values for ${{ matrix.service }}
+        run: |
+          SERVICE="${{ matrix.service }}"
+          TAG="$(echo ${{ github.sha }} | cut -c1-7)"
+          ECR_REPO="${{ env.ECR_REPO }}"
+          VALUES_FILE="src/${SERVICE}/chart/values.yaml"
+
+          echo "Updating Helm values for ${SERVICE}"
+          echo "Repository: ${ECR_REPO}"
+          echo "Tag: ${TAG}"
+          echo "File: ${VALUES_FILE}"
+
+          if [[ ! -f "${VALUES_FILE}" ]]; then
+            echo "Values file not found: ${VALUES_FILE}"
             exit 1
           fi
-          echo "registry_uri=$REGISTRY_URI" >> $GITHUB_OUTPUT
 
-      - name: Ensure ECR public repository exists
-        env:
-          REPOSITORY: retail-store-sample-cart
-        run: |
-          aws ecr-public describe-repositories \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
-            --repository-names "$REPOSITORY" >/dev/null 2>&1 || \
-          aws ecr-public create-repository \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
-            --repository-name "$REPOSITORY"
+          cp "${VALUES_FILE}" "${VALUES_FILE}.backup"
 
-      - name: Build and push Docker image
-        id: docker-build
-        env:
-          REGISTRY_URI: ${{ steps.resolve-public-registry.outputs.registry_uri }}
-          REPOSITORY: retail-store-sample-cart
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          cd src/cart
-          docker build -t $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG .
-          docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
-          echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          awk -v repo="${ECR_REPO}" -v tag="${TAG}" '
+          BEGIN { in_main_image = 0; updated_repo = 0; updated_tag = 0 }
+          /^image:/ { in_main_image = 1; print; next }
+          in_main_image && /^[[:space:]]*repository:/ && !updated_repo {
+            print "  repository: " repo; updated_repo = 1; next
+          }
+          in_main_image && /^[[:space:]]*tag:/ && !updated_tag {
+            print "  tag: \"" tag "\""; updated_tag = 1; next
+          }
+          /^[a-zA-Z]/ && !/^image:/ { in_main_image = 0 }
+          { print }
+          ' "${VALUES_FILE}.backup" > "${VALUES_FILE}"
 
-      - name: Update Helm values
-        env:
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/cart/chart/values.yaml
-
-  build-and-push-catalog:
-    name: Build & Push Catalog Service
-    runs-on: ubuntu-latest
-    needs: detect-changes
-    if: needs.detect-changes.outputs.catalog == 'true' && github.event_name != 'pull_request'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-        with:
-          registry-type: public
-
-      - name: Resolve ECR public registry URI
-        id: resolve-public-registry
-        run: |
-          REGISTRY_URI=$(aws ecr-public describe-registries \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
-            --query "registries[?aliases[?primaryRegistryAlias]].registryUri | [0]" \
-            --output text)
-          if [ -z "$REGISTRY_URI" ] || [ "$REGISTRY_URI" = "None" ]; then
-            echo "Unable to resolve the active ECR Public registry URI." >&2
+          if grep -q "${ECR_REPO}" "${VALUES_FILE}" && grep -q "\"${TAG}\"" "${VALUES_FILE}"; then
+            echo "Successfully updated ${VALUES_FILE}"
+          else
+            echo "Update failed - restoring backup"
+            mv "${VALUES_FILE}.backup" "${VALUES_FILE}"
             exit 1
           fi
-          echo "registry_uri=$REGISTRY_URI" >> $GITHUB_OUTPUT
 
-      - name: Ensure ECR public repository exists
-        env:
-          REPOSITORY: retail-store-sample-catalog
+          rm "${VALUES_FILE}.backup"
+
+      - name: Commit Helm changes for ${{ matrix.service }}
         run: |
-          aws ecr-public describe-repositories \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
-            --repository-names "$REPOSITORY" >/dev/null 2>&1 || \
-          aws ecr-public create-repository \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
-            --repository-name "$REPOSITORY"
+          SERVICE="${{ matrix.service }}"
+          TAG="$(echo ${{ github.sha }} | cut -c1-7)"
 
-      - name: Build and push Docker image
-        id: docker-build
-        env:
-          REGISTRY_URI: ${{ steps.resolve-public-registry.outputs.registry_uri }}
-          REPOSITORY: retail-store-sample-catalog
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          cd src/catalog
-          docker build -t $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG .
-          docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
-          echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          git config --local user.email "gitops@github.com"
+          git config --local user.name "GitOps Bot"
 
-      - name: Update Helm values
-        env:
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/catalog/chart/values.yaml
+          if ! git diff --quiet "src/${SERVICE}/chart/values.yaml"; then
+            git add "src/${SERVICE}/chart/values.yaml"
+            git commit -m "Update ${SERVICE} Helm chart to ${TAG}"
 
-  build-and-push-checkout:
-    name: Build & Push Checkout Service
-    runs-on: ubuntu-latest
-    needs: detect-changes
-    if: needs.detect-changes.outputs.checkout == 'true' && github.event_name != 'pull_request'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+            for i in {1..3}; do
+              if git push origin HEAD:gitops; then
+                echo "Successfully pushed Helm update for ${SERVICE}"
+                break
+              fi
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+              echo "Push failed for ${SERVICE}, attempt $i/3. Retrying..."
+              git fetch origin gitops
+              git rebase origin/gitops
+              sleep 2
 
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-        with:
-          registry-type: public
-
-      - name: Resolve ECR public registry URI
-        id: resolve-public-registry
-        run: |
-          REGISTRY_URI=$(aws ecr-public describe-registries \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
-            --query "registries[?aliases[?primaryRegistryAlias]].registryUri | [0]" \
-            --output text)
-          if [ -z "$REGISTRY_URI" ] || [ "$REGISTRY_URI" = "None" ]; then
-            echo "Unable to resolve the active ECR Public registry URI." >&2
-            exit 1
+              if [ $i -eq 3 ]; then
+                echo "Failed to push ${SERVICE} after 3 attempts"
+                exit 1
+              fi
+            done
+          else
+            echo "No Helm changes to commit for ${SERVICE}"
           fi
-          echo "registry_uri=$REGISTRY_URI" >> $GITHUB_OUTPUT
 
-      - name: Ensure ECR public repository exists
-        env:
-          REPOSITORY: retail-store-sample-checkout
-        run: |
-          aws ecr-public describe-repositories \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
-            --repository-names "$REPOSITORY" >/dev/null 2>&1 || \
-          aws ecr-public create-repository \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
-            --repository-name "$REPOSITORY"
-
-      - name: Build and push Docker image
-        id: docker-build
-        env:
-          REGISTRY_URI: ${{ steps.resolve-public-registry.outputs.registry_uri }}
-          REPOSITORY: retail-store-sample-checkout
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          cd src/checkout
-          docker build -t $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG .
-          docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
-          echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
-
-      - name: Update Helm values
-        env:
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/checkout/chart/values.yaml
-
-  build-and-push-orders:
-    name: Build & Push Orders Service
+  summary:
+    name: Deployment Summary
     runs-on: ubuntu-latest
-    needs: detect-changes
-    if: needs.detect-changes.outputs.orders == 'true' && github.event_name != 'pull_request'
+    needs: [detect-changes, deploy]
+    if: always()
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-        with:
-          registry-type: public
-
-      - name: Resolve ECR public registry URI
-        id: resolve-public-registry
+      - name: Create deployment summary
         run: |
-          REGISTRY_URI=$(aws ecr-public describe-registries \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
-            --query "registries[?aliases[?primaryRegistryAlias]].registryUri | [0]" \
-            --output text)
-          if [ -z "$REGISTRY_URI" ] || [ "$REGISTRY_URI" = "None" ]; then
-            echo "Unable to resolve the active ECR Public registry URI." >&2
-            exit 1
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "Branch: gitops" >> $GITHUB_STEP_SUMMARY
+          echo "Triggered by: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.detect-changes.outputs.has-changes }}" = "true" ]; then
+            echo "Changed Services: ${{ needs.detect-changes.outputs.changed-services }}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            if [ "${{ needs.deploy.result }}" = "success" ]; then
+              echo "Status: Deployment successful" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "Actions completed:" >> $GITHUB_STEP_SUMMARY
+              echo "- Built and pushed Docker images to ECR" >> $GITHUB_STEP_SUMMARY
+              echo "- Updated Helm chart values" >> $GITHUB_STEP_SUMMARY
+              echo "- Committed changes to repository" >> $GITHUB_STEP_SUMMARY
+              echo "- ArgoCD will sync automatically" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "Status: Deployment failed" >> $GITHUB_STEP_SUMMARY
+              echo "Check the workflow logs for details" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "Status: No services changed - no deployment needed" >> $GITHUB_STEP_SUMMARY
           fi
-          echo "registry_uri=$REGISTRY_URI" >> $GITHUB_OUTPUT
-
-      - name: Ensure ECR public repository exists
-        env:
-          REPOSITORY: retail-store-sample-orders
-        run: |
-          aws ecr-public describe-repositories \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
-            --repository-names "$REPOSITORY" >/dev/null 2>&1 || \
-          aws ecr-public create-repository \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
-            --repository-name "$REPOSITORY"
-
-      - name: Build and push Docker image
-        id: docker-build
-        env:
-          REGISTRY_URI: ${{ steps.resolve-public-registry.outputs.registry_uri }}
-          REPOSITORY: retail-store-sample-orders
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          cd src/orders
-          docker build -t $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG .
-          docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
-          echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
-
-      - name: Update Helm values
-        env:
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/orders/chart/values.yaml
-
-  build-and-push-ui:
-    name: Build & Push UI Service
-    runs-on: ubuntu-latest
-    needs: detect-changes
-    if: needs.detect-changes.outputs.ui == 'true' && github.event_name != 'pull_request'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-        with:
-          registry-type: public
-
-      - name: Resolve ECR public registry URI
-        id: resolve-public-registry
-        run: |
-          REGISTRY_URI=$(aws ecr-public describe-registries \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
-            --query "registries[?aliases[?primaryRegistryAlias]].registryUri | [0]" \
-            --output text)
-          if [ -z "$REGISTRY_URI" ] || [ "$REGISTRY_URI" = "None" ]; then
-            echo "Unable to resolve the active ECR Public registry URI." >&2
-            exit 1
-          fi
-          echo "registry_uri=$REGISTRY_URI" >> $GITHUB_OUTPUT
-
-      - name: Ensure ECR public repository exists
-        env:
-          REPOSITORY: retail-store-sample-ui
-        run: |
-          aws ecr-public describe-repositories \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
-            --repository-names "$REPOSITORY" >/dev/null 2>&1 || \
-          aws ecr-public create-repository \
-            --region ${{ env.ECR_PUBLIC_REGION }} \
-            --repository-name "$REPOSITORY"
-
-      - name: Build and push Docker image
-        id: docker-build
-        env:
-          REGISTRY_URI: ${{ steps.resolve-public-registry.outputs.registry_uri }}
-          REPOSITORY: retail-store-sample-ui
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          cd src/ui
-          docker build -t $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG .
-          docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
-          echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
-
-      - name: Update Helm values
-        env:
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/ui/chart/values.yaml
-
-  deploy-cart:
-    name: Deploy Cart to EKS
-    runs-on: ubuntu-latest
-    needs:
-      - detect-changes
-      - build-and-push-cart
-    if: github.event_name != 'pull_request' && needs.detect-changes.outputs.cart == 'true' && needs.build-and-push-cart.result == 'success'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Update kubeconfig
-        run: |
-          aws eks update-kubeconfig \
-            --region ${{ env.AWS_REGION }} \
-            --name ${{ env.EKS_CLUSTER_NAME }} \
-            --kubeconfig /tmp/kubeconfig
-          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
-
-      - name: Install Helm
-        uses: azure/setup-helm@v3
-        with:
-          version: 'latest'
-
-      - name: Deploy cart service
-        run: |
-          helm upgrade --install cart src/cart/chart \
-            --namespace default \
-            --create-namespace \
-            --values src/cart/chart/values.yaml \
-            --wait \
-            --timeout 5m
-
-      - name: Verify deployment
-        run: |
-          kubectl rollout status deployment/cart \
-            -n default \
-            --timeout=5m
-        env:
-          KUBECONFIG: /tmp/kubeconfig
-
-  deploy-catalog:
-    name: Deploy Catalog to EKS
-    runs-on: ubuntu-latest
-    needs:
-      - detect-changes
-      - build-and-push-catalog
-    if: github.event_name != 'pull_request' && needs.detect-changes.outputs.catalog == 'true' && needs.build-and-push-catalog.result == 'success'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Update kubeconfig
-        run: |
-          aws eks update-kubeconfig \
-            --region ${{ env.AWS_REGION }} \
-            --name ${{ env.EKS_CLUSTER_NAME }} \
-            --kubeconfig /tmp/kubeconfig
-          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
-
-      - name: Install Helm
-        uses: azure/setup-helm@v3
-        with:
-          version: 'latest'
-
-      - name: Deploy catalog service
-        run: |
-          helm upgrade --install catalog src/catalog/chart \
-            --namespace default \
-            --create-namespace \
-            --values src/catalog/chart/values.yaml \
-            --wait \
-            --timeout 5m
-
-      - name: Verify deployment
-        run: |
-          kubectl rollout status deployment/catalog \
-            -n default \
-            --timeout=5m
-        env:
-          KUBECONFIG: /tmp/kubeconfig
-
-  deploy-checkout:
-    name: Deploy Checkout to EKS
-    runs-on: ubuntu-latest
-    needs:
-      - detect-changes
-      - build-and-push-checkout
-    if: github.event_name != 'pull_request' && needs.detect-changes.outputs.checkout == 'true' && needs.build-and-push-checkout.result == 'success'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Update kubeconfig
-        run: |
-          aws eks update-kubeconfig \
-            --region ${{ env.AWS_REGION }} \
-            --name ${{ env.EKS_CLUSTER_NAME }} \
-            --kubeconfig /tmp/kubeconfig
-          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
-
-      - name: Install Helm
-        uses: azure/setup-helm@v3
-        with:
-          version: 'latest'
-
-      - name: Deploy checkout service
-        run: |
-          helm upgrade --install checkout src/checkout/chart \
-            --namespace default \
-            --create-namespace \
-            --values src/checkout/chart/values.yaml \
-            --wait \
-            --timeout 5m
-
-      - name: Verify deployment
-        run: |
-          kubectl rollout status deployment/checkout \
-            -n default \
-            --timeout=5m
-        env:
-          KUBECONFIG: /tmp/kubeconfig
-
-  deploy-orders:
-    name: Deploy Orders to EKS
-    runs-on: ubuntu-latest
-    needs:
-      - detect-changes
-      - build-and-push-orders
-    if: github.event_name != 'pull_request' && needs.detect-changes.outputs.orders == 'true' && needs.build-and-push-orders.result == 'success'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Update kubeconfig
-        run: |
-          aws eks update-kubeconfig \
-            --region ${{ env.AWS_REGION }} \
-            --name ${{ env.EKS_CLUSTER_NAME }} \
-            --kubeconfig /tmp/kubeconfig
-          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
-
-      - name: Install Helm
-        uses: azure/setup-helm@v3
-        with:
-          version: 'latest'
-
-      - name: Deploy orders service
-        run: |
-          helm upgrade --install orders src/orders/chart \
-            --namespace default \
-            --create-namespace \
-            --values src/orders/chart/values.yaml \
-            --wait \
-            --timeout 5m
-
-      - name: Verify deployment
-        run: |
-          kubectl rollout status deployment/orders \
-            -n default \
-            --timeout=5m
-        env:
-          KUBECONFIG: /tmp/kubeconfig
-
-  deploy-ui:
-    name: Deploy UI to EKS
-    runs-on: ubuntu-latest
-    needs:
-      - detect-changes
-      - build-and-push-ui
-    if: github.event_name != 'pull_request' && needs.detect-changes.outputs.ui == 'true' && needs.build-and-push-ui.result == 'success'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Update kubeconfig
-        run: |
-          aws eks update-kubeconfig \
-            --region ${{ env.AWS_REGION }} \
-            --name ${{ env.EKS_CLUSTER_NAME }} \
-            --kubeconfig /tmp/kubeconfig
-          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
-
-      - name: Install Helm
-        uses: azure/setup-helm@v3
-        with:
-          version: 'latest'
-
-      - name: Deploy ui service
-        run: |
-          helm upgrade --install ui src/ui/chart \
-            --namespace default \
-            --create-namespace \
-            --values src/ui/chart/values.yaml \
-            --wait \
-            --timeout 5m
-
-      - name: Verify deployment
-        run: |
-          kubectl rollout status deployment/ui \
-            -n default \
-            --timeout=5m
-        env:
-          KUBECONFIG: /tmp/kubeconfig

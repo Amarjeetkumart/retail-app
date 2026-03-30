@@ -1,0 +1,650 @@
+name: CI - Build and Push to ECR
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ap-south-1
+  ECR_PUBLIC_REGION: us-east-1
+  EKS_CLUSTER_NAME: retail-store-1wo0
+
+jobs:
+  detect-changes:
+    name: Detect Service Changes
+    runs-on: ubuntu-latest
+    outputs:
+      cart: ${{ steps.detect.outputs.cart }}
+      catalog: ${{ steps.detect.outputs.catalog }}
+      checkout: ${{ steps.detect.outputs.checkout }}
+      orders: ${{ steps.detect.outputs.orders }}
+      ui: ${{ steps.detect.outputs.ui }}
+      any: ${{ steps.detect.outputs.any }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes
+        id: detect
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            BASE_REF="${{ github.base_ref }}"
+            DIFF_CMD="git diff --name-only origin/${BASE_REF}...HEAD"
+          else
+            DIFF_CMD="git diff --name-only ${{ github.event.before }} ${{ github.event.after }}"
+          fi
+          
+          CHANGED_FILES=$($DIFF_CMD)
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+          
+          ANY_CHANGE=false
+          
+          if echo "$CHANGED_FILES" | grep -q "^src/cart/"; then
+            echo "cart=true" >> $GITHUB_OUTPUT
+            ANY_CHANGE=true
+          else
+            echo "cart=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if echo "$CHANGED_FILES" | grep -q "^src/catalog/"; then
+            echo "catalog=true" >> $GITHUB_OUTPUT
+            ANY_CHANGE=true
+          else
+            echo "catalog=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if echo "$CHANGED_FILES" | grep -q "^src/checkout/"; then
+            echo "checkout=true" >> $GITHUB_OUTPUT
+            ANY_CHANGE=true
+          else
+            echo "checkout=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if echo "$CHANGED_FILES" | grep -q "^src/orders/"; then
+            echo "orders=true" >> $GITHUB_OUTPUT
+            ANY_CHANGE=true
+          else
+            echo "orders=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if echo "$CHANGED_FILES" | grep -q "^src/ui/"; then
+            echo "ui=true" >> $GITHUB_OUTPUT
+            ANY_CHANGE=true
+          else
+            echo "ui=false" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "any=$ANY_CHANGE" >> $GITHUB_OUTPUT
+
+  build-and-push-cart:
+    name: Build & Push Cart Service
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.cart == 'true' && github.event_name != 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
+      - name: Resolve ECR public registry URI
+        id: resolve-public-registry
+        run: |
+          REGISTRY_URI=$(aws ecr-public describe-registries \
+            --region ${{ env.ECR_PUBLIC_REGION }} \
+            --query "registries[?aliases[?primaryRegistryAlias]].registryUri | [0]" \
+            --output text)
+          if [ -z "$REGISTRY_URI" ] || [ "$REGISTRY_URI" = "None" ]; then
+            echo "Unable to resolve the active ECR Public registry URI." >&2
+            exit 1
+          fi
+          echo "registry_uri=$REGISTRY_URI" >> $GITHUB_OUTPUT
+
+      - name: Ensure ECR public repository exists
+        env:
+          REPOSITORY: retail-store-sample-cart
+        run: |
+          aws ecr-public describe-repositories \
+            --region ${{ env.ECR_PUBLIC_REGION }} \
+            --repository-names "$REPOSITORY" >/dev/null 2>&1 || \
+          aws ecr-public create-repository \
+            --region ${{ env.ECR_PUBLIC_REGION }} \
+            --repository-name "$REPOSITORY"
+
+      - name: Build and push Docker image
+        id: docker-build
+        env:
+          REGISTRY_URI: ${{ steps.resolve-public-registry.outputs.registry_uri }}
+          REPOSITORY: retail-store-sample-cart
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd src/cart
+          docker build -t $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
+          echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update Helm values
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/cart/chart/values.yaml
+
+  build-and-push-catalog:
+    name: Build & Push Catalog Service
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.catalog == 'true' && github.event_name != 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
+      - name: Resolve ECR public registry URI
+        id: resolve-public-registry
+        run: |
+          REGISTRY_URI=$(aws ecr-public describe-registries \
+            --region ${{ env.ECR_PUBLIC_REGION }} \
+            --query "registries[?aliases[?primaryRegistryAlias]].registryUri | [0]" \
+            --output text)
+          if [ -z "$REGISTRY_URI" ] || [ "$REGISTRY_URI" = "None" ]; then
+            echo "Unable to resolve the active ECR Public registry URI." >&2
+            exit 1
+          fi
+          echo "registry_uri=$REGISTRY_URI" >> $GITHUB_OUTPUT
+
+      - name: Ensure ECR public repository exists
+        env:
+          REPOSITORY: retail-store-sample-catalog
+        run: |
+          aws ecr-public describe-repositories \
+            --region ${{ env.ECR_PUBLIC_REGION }} \
+            --repository-names "$REPOSITORY" >/dev/null 2>&1 || \
+          aws ecr-public create-repository \
+            --region ${{ env.ECR_PUBLIC_REGION }} \
+            --repository-name "$REPOSITORY"
+
+      - name: Build and push Docker image
+        id: docker-build
+        env:
+          REGISTRY_URI: ${{ steps.resolve-public-registry.outputs.registry_uri }}
+          REPOSITORY: retail-store-sample-catalog
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd src/catalog
+          docker build -t $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
+          echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update Helm values
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/catalog/chart/values.yaml
+
+  build-and-push-checkout:
+    name: Build & Push Checkout Service
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.checkout == 'true' && github.event_name != 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
+      - name: Resolve ECR public registry URI
+        id: resolve-public-registry
+        run: |
+          REGISTRY_URI=$(aws ecr-public describe-registries \
+            --region ${{ env.ECR_PUBLIC_REGION }} \
+            --query "registries[?aliases[?primaryRegistryAlias]].registryUri | [0]" \
+            --output text)
+          if [ -z "$REGISTRY_URI" ] || [ "$REGISTRY_URI" = "None" ]; then
+            echo "Unable to resolve the active ECR Public registry URI." >&2
+            exit 1
+          fi
+          echo "registry_uri=$REGISTRY_URI" >> $GITHUB_OUTPUT
+
+      - name: Ensure ECR public repository exists
+        env:
+          REPOSITORY: retail-store-sample-checkout
+        run: |
+          aws ecr-public describe-repositories \
+            --region ${{ env.ECR_PUBLIC_REGION }} \
+            --repository-names "$REPOSITORY" >/dev/null 2>&1 || \
+          aws ecr-public create-repository \
+            --region ${{ env.ECR_PUBLIC_REGION }} \
+            --repository-name "$REPOSITORY"
+
+      - name: Build and push Docker image
+        id: docker-build
+        env:
+          REGISTRY_URI: ${{ steps.resolve-public-registry.outputs.registry_uri }}
+          REPOSITORY: retail-store-sample-checkout
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd src/checkout
+          docker build -t $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
+          echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update Helm values
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/checkout/chart/values.yaml
+
+  build-and-push-orders:
+    name: Build & Push Orders Service
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.orders == 'true' && github.event_name != 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
+      - name: Resolve ECR public registry URI
+        id: resolve-public-registry
+        run: |
+          REGISTRY_URI=$(aws ecr-public describe-registries \
+            --region ${{ env.ECR_PUBLIC_REGION }} \
+            --query "registries[?aliases[?primaryRegistryAlias]].registryUri | [0]" \
+            --output text)
+          if [ -z "$REGISTRY_URI" ] || [ "$REGISTRY_URI" = "None" ]; then
+            echo "Unable to resolve the active ECR Public registry URI." >&2
+            exit 1
+          fi
+          echo "registry_uri=$REGISTRY_URI" >> $GITHUB_OUTPUT
+
+      - name: Ensure ECR public repository exists
+        env:
+          REPOSITORY: retail-store-sample-orders
+        run: |
+          aws ecr-public describe-repositories \
+            --region ${{ env.ECR_PUBLIC_REGION }} \
+            --repository-names "$REPOSITORY" >/dev/null 2>&1 || \
+          aws ecr-public create-repository \
+            --region ${{ env.ECR_PUBLIC_REGION }} \
+            --repository-name "$REPOSITORY"
+
+      - name: Build and push Docker image
+        id: docker-build
+        env:
+          REGISTRY_URI: ${{ steps.resolve-public-registry.outputs.registry_uri }}
+          REPOSITORY: retail-store-sample-orders
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd src/orders
+          docker build -t $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
+          echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update Helm values
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/orders/chart/values.yaml
+
+  build-and-push-ui:
+    name: Build & Push UI Service
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.ui == 'true' && github.event_name != 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
+      - name: Resolve ECR public registry URI
+        id: resolve-public-registry
+        run: |
+          REGISTRY_URI=$(aws ecr-public describe-registries \
+            --region ${{ env.ECR_PUBLIC_REGION }} \
+            --query "registries[?aliases[?primaryRegistryAlias]].registryUri | [0]" \
+            --output text)
+          if [ -z "$REGISTRY_URI" ] || [ "$REGISTRY_URI" = "None" ]; then
+            echo "Unable to resolve the active ECR Public registry URI." >&2
+            exit 1
+          fi
+          echo "registry_uri=$REGISTRY_URI" >> $GITHUB_OUTPUT
+
+      - name: Ensure ECR public repository exists
+        env:
+          REPOSITORY: retail-store-sample-ui
+        run: |
+          aws ecr-public describe-repositories \
+            --region ${{ env.ECR_PUBLIC_REGION }} \
+            --repository-names "$REPOSITORY" >/dev/null 2>&1 || \
+          aws ecr-public create-repository \
+            --region ${{ env.ECR_PUBLIC_REGION }} \
+            --repository-name "$REPOSITORY"
+
+      - name: Build and push Docker image
+        id: docker-build
+        env:
+          REGISTRY_URI: ${{ steps.resolve-public-registry.outputs.registry_uri }}
+          REPOSITORY: retail-store-sample-ui
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd src/ui
+          docker build -t $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY_URI/$REPOSITORY:$IMAGE_TAG
+          echo "image_uri=$REGISTRY_URI/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update Helm values
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sed -i "s|tag: \".*\"|tag: \"$IMAGE_TAG\"|g" src/ui/chart/values.yaml
+
+  deploy-cart:
+    name: Deploy Cart to EKS
+    runs-on: ubuntu-latest
+    needs:
+      - detect-changes
+      - build-and-push-cart
+    if: github.event_name != 'pull_request' && needs.detect-changes.outputs.cart == 'true' && needs.build-and-push-cart.result == 'success'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
+            --kubeconfig /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'latest'
+
+      - name: Deploy cart service
+        run: |
+          helm upgrade --install cart src/cart/chart \
+            --namespace default \
+            --create-namespace \
+            --values src/cart/chart/values.yaml \
+            --wait \
+            --timeout 5m
+
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/cart \
+            -n default \
+            --timeout=5m
+        env:
+          KUBECONFIG: /tmp/kubeconfig
+
+  deploy-catalog:
+    name: Deploy Catalog to EKS
+    runs-on: ubuntu-latest
+    needs:
+      - detect-changes
+      - build-and-push-catalog
+    if: github.event_name != 'pull_request' && needs.detect-changes.outputs.catalog == 'true' && needs.build-and-push-catalog.result == 'success'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
+            --kubeconfig /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'latest'
+
+      - name: Deploy catalog service
+        run: |
+          helm upgrade --install catalog src/catalog/chart \
+            --namespace default \
+            --create-namespace \
+            --values src/catalog/chart/values.yaml \
+            --wait \
+            --timeout 5m
+
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/catalog \
+            -n default \
+            --timeout=5m
+        env:
+          KUBECONFIG: /tmp/kubeconfig
+
+  deploy-checkout:
+    name: Deploy Checkout to EKS
+    runs-on: ubuntu-latest
+    needs:
+      - detect-changes
+      - build-and-push-checkout
+    if: github.event_name != 'pull_request' && needs.detect-changes.outputs.checkout == 'true' && needs.build-and-push-checkout.result == 'success'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
+            --kubeconfig /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'latest'
+
+      - name: Deploy checkout service
+        run: |
+          helm upgrade --install checkout src/checkout/chart \
+            --namespace default \
+            --create-namespace \
+            --values src/checkout/chart/values.yaml \
+            --wait \
+            --timeout 5m
+
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/checkout \
+            -n default \
+            --timeout=5m
+        env:
+          KUBECONFIG: /tmp/kubeconfig
+
+  deploy-orders:
+    name: Deploy Orders to EKS
+    runs-on: ubuntu-latest
+    needs:
+      - detect-changes
+      - build-and-push-orders
+    if: github.event_name != 'pull_request' && needs.detect-changes.outputs.orders == 'true' && needs.build-and-push-orders.result == 'success'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
+            --kubeconfig /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'latest'
+
+      - name: Deploy orders service
+        run: |
+          helm upgrade --install orders src/orders/chart \
+            --namespace default \
+            --create-namespace \
+            --values src/orders/chart/values.yaml \
+            --wait \
+            --timeout 5m
+
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/orders \
+            -n default \
+            --timeout=5m
+        env:
+          KUBECONFIG: /tmp/kubeconfig
+
+  deploy-ui:
+    name: Deploy UI to EKS
+    runs-on: ubuntu-latest
+    needs:
+      - detect-changes
+      - build-and-push-ui
+    if: github.event_name != 'pull_request' && needs.detect-changes.outputs.ui == 'true' && needs.build-and-push-ui.result == 'success'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
+            --kubeconfig /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'latest'
+
+      - name: Deploy ui service
+        run: |
+          helm upgrade --install ui src/ui/chart \
+            --namespace default \
+            --create-namespace \
+            --values src/ui/chart/values.yaml \
+            --wait \
+            --timeout 5m
+
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/ui \
+            -n default \
+            --timeout=5m
+        env:
+          KUBECONFIG: /tmp/kubeconfig
